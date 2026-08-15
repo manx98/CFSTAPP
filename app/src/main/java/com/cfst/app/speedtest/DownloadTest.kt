@@ -3,6 +3,7 @@ package com.cfst.app.speedtest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.InetAddress
@@ -24,22 +25,35 @@ class DownloadTest {
     companion object {
         // 下载测速 URL - 使用官方测速地址，同时改用 http 以避免由于国内 HTTPS SNI 阻断导致的连接重置，解决 cf.xiu2.xyz 403 Forbidden 的问题。
         // bytes=50000000 代表单次请求 50MB。
-        private const val DOWNLOAD_URL = "http://speed.cloudflare.com/__down?bytes=50000000"
-        private const val HOST_NAME = "speed.cloudflare.com"
+        const val DEFAULT_DOWNLOAD_URL = "http://speed.cloudflare.com/__down?bytes=50000000"
+
+        internal fun normalizeDownloadUrl(value: String): String? {
+            if (value.isBlank()) return DEFAULT_DOWNLOAD_URL
+            val url = value.trim().toHttpUrlOrNull() ?: return null
+            val isIpv4 = url.host.split('.').let { parts ->
+                parts.size == 4 && parts.all { part ->
+                    part.toIntOrNull()?.let { it in 0..255 } == true
+                }
+            }
+            if (url.username.isNotEmpty() || url.password.isNotEmpty() || '.' !in url.host || isIpv4 || ':' in url.host) return null
+            return url.newBuilder().fragment(null).build().toString()
+        }
 
         /**
          * 创建 OkHttpClient 用于测速
          * 使用自定义 DNS 解析强制请求发送到指定 IP
          */
-        private fun createClientForIp(ip: String): OkHttpClient {
+        private fun createClientForIp(ip: String, hostName: String): OkHttpClient {
             return OkHttpClient.Builder()
                 .connectTimeout(5, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
                 .writeTimeout(5, TimeUnit.SECONDS)
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .dns(object : Dns {
                     override fun lookup(hostname: String): List<InetAddress> {
                         // 强制将测速域名的 DNS 解析结果指向我们要测速的 Cloudflare IP
-                        if (hostname == HOST_NAME) {
+                        if (hostname == hostName) {
                             return try {
                                 listOf(InetAddress.getByName(ip))
                             } catch (e: Exception) {
@@ -66,9 +80,11 @@ class DownloadTest {
          */
         suspend fun testDownloadSpeed(
             ip: String,
-            testDurationMs: Long = 10000  // 改为 10 秒，与 Windows 原版一致
+            testDurationMs: Long = 10000,  // 改为 10 秒，与 Windows 原版一致
+            downloadUrl: String = DEFAULT_DOWNLOAD_URL
         ): Double = withContext(Dispatchers.IO) {
-            val client = createClientForIp(ip)
+            val url = downloadUrl.toHttpUrlOrNull() ?: return@withContext 0.0
+            val client = createClientForIp(ip, url.host)
 
             var downloadedBytes = 0L
             var actualElapsedMs = 0L
@@ -80,8 +96,7 @@ class DownloadTest {
                 // 通过 while 循环保持测速，直到 10 秒倒计时结束。应对 Gigabit 带宽 50MB 瞬间跑完的情况。
                 while (System.currentTimeMillis() < deadline) {
                     val request = Request.Builder()
-                        .url(DOWNLOAD_URL)
-                        .header("Host", HOST_NAME)
+                        .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                         .header("Accept", "*/*")
                         .header("Connection", "close")

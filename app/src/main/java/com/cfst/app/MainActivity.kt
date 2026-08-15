@@ -24,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -717,6 +719,7 @@ fun EnhancedSettingsDialog(
     val pingCount by viewModel.pingCount.collectAsState()
     val maxConcurrentPings by viewModel.maxConcurrentPings.collectAsState()
     val enableDownloadTest by viewModel.enableDownloadTest.collectAsState()
+    val downloadUrl by viewModel.downloadUrl.collectAsState()
     val speedLimit by viewModel.speedLimit.collectAsState()
     val latencyLimit by viewModel.latencyLimit.collectAsState()
     val downloadTestCount by viewModel.downloadTestCount.collectAsState()
@@ -741,7 +744,10 @@ fun EnhancedSettingsDialog(
     var latencyLimitText by remember { mutableStateOf(latencyLimit.toString()) }
     var downloadTestCountText by remember { mutableStateOf(downloadTestCount.toString()) }
     var downloadDurationText by remember { mutableStateOf(downloadDuration.toString()) }
+    var downloadUrlText by remember(downloadUrl) { mutableStateOf(downloadUrl) }
+    var downloadUrlError by remember { mutableStateOf(false) }
     var proxyUrlText by remember { mutableStateOf(proxyUrl) }
+    val downloadUrlFocusRequester = remember { FocusRequester() }
 
     val mirrorSites = viewModel.getMirrorSites()
 
@@ -797,6 +803,25 @@ fun EnhancedSettingsDialog(
                         onCheckedChange = { viewModel.updateEnableDownloadTest(it) }
                     )
                 }
+
+                OutlinedTextField(
+                    value = downloadUrlText,
+                    onValueChange = {
+                        downloadUrlText = it
+                        downloadUrlError = false
+                    },
+                    label = { Text("下载测速地址") },
+                    supportingText = {
+                        Text(if (downloadUrlError) "请输入不含账号密码和 IP 地址的完整 HTTP/HTTPS URL" else "需填写已接入 Cloudflare 的 HTTP/HTTPS 下载直链")
+                    },
+                    isError = downloadUrlError,
+                    enabled = enableDownloadTest,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(downloadUrlFocusRequester)
+                )
 
                 OutlinedTextField(
                     value = downloadTestCountText,
@@ -1004,7 +1029,14 @@ fun EnhancedSettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                if (viewModel.saveDownloadUrl(downloadUrlText)) {
+                    onDismiss()
+                } else {
+                    downloadUrlError = true
+                    downloadUrlFocusRequester.requestFocus()
+                }
+            }) {
                 Text("确定")
             }
         },

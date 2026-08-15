@@ -34,7 +34,8 @@ class SpeedTestEngine {
         val downloadTestCount: Int = 20,
         val pingFirst: Boolean = true,
         val maxConcurrentDownloads: Int = 5,
-        val maxConcurrentPings: Int = 8
+        val maxConcurrentPings: Int = 8,
+        val downloadUrl: String = DownloadTest.DEFAULT_DOWNLOAD_URL
     )
 
     /**
@@ -139,7 +140,8 @@ class SpeedTestEngine {
                                     val downloadSpeed = if (config.downloadTest) {
                                         DownloadTest.testDownloadSpeed(
                                             ip = ip,
-                                            testDurationMs = config.downloadDuration
+                                            testDurationMs = config.downloadDuration,
+                                            downloadUrl = config.downloadUrl
                                         )
                                     } else {
                                         0.0
@@ -226,7 +228,8 @@ class SpeedTestEngine {
                         if (config.downloadTest && !shouldStop.get()) {
                             downloadSpeed = DownloadTest.testDownloadSpeed(
                                 ip = ip,
-                                testDurationMs = config.downloadDuration
+                                testDurationMs = config.downloadDuration,
+                                downloadUrl = config.downloadUrl
                             )
                         }
 

@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.cfst.app.model.SpeedTestResult
 import com.cfst.app.speedtest.SpeedTestEngine
+import com.cfst.app.speedtest.DownloadTest
 import com.cfst.app.utils.IpRangeParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -181,6 +182,14 @@ class SpeedTestViewModel(private val application: Application) : ViewModel() {
     
     private val _enableDownloadTest = MutableStateFlow(true)
     val enableDownloadTest: StateFlow<Boolean> = _enableDownloadTest.asStateFlow()
+
+    private val _downloadUrl = MutableStateFlow(
+        DownloadTest.normalizeDownloadUrl(
+            application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                .getString(DOWNLOAD_URL_KEY, DownloadTest.DEFAULT_DOWNLOAD_URL).orEmpty()
+        ) ?: DownloadTest.DEFAULT_DOWNLOAD_URL
+    )
+    val downloadUrl: StateFlow<String> = _downloadUrl.asStateFlow()
     
     private val _speedLimit = MutableStateFlow(0.0)
     val speedLimit: StateFlow<Double> = _speedLimit.asStateFlow()
@@ -254,6 +263,7 @@ class SpeedTestViewModel(private val application: Application) : ViewModel() {
         private const val CLOUDFLARE_IPV6_URL = "https://www.cloudflare.com/ips-v6"
         // 历史记录相关键
         private const val HISTORY_RECORDS_KEY = "history_records"
+        private const val DOWNLOAD_URL_KEY = "download_url"
         
         /**
          * ViewModel Factory
@@ -317,6 +327,14 @@ class SpeedTestViewModel(private val application: Application) : ViewModel() {
      */
     fun updateEnableDownloadTest(enabled: Boolean) {
         _enableDownloadTest.value = enabled
+    }
+
+    fun saveDownloadUrl(value: String): Boolean {
+        val normalized = DownloadTest.normalizeDownloadUrl(value) ?: return false
+        _downloadUrl.value = normalized
+        application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .edit().putString(DOWNLOAD_URL_KEY, normalized).apply()
+        return true
     }
     
     /**
@@ -831,7 +849,8 @@ class SpeedTestViewModel(private val application: Application) : ViewModel() {
                 downloadTestCount = _downloadTestCount.value,
                 pingFirst = true,
                 maxConcurrentDownloads = 5,
-                maxConcurrentPings = _maxConcurrentPings.value
+                maxConcurrentPings = _maxConcurrentPings.value,
+                downloadUrl = _downloadUrl.value
             )
 
             val currentResults = mutableListOf<SpeedTestResult>()
