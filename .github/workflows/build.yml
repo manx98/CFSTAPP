@@ -91,9 +91,9 @@ jobs:
           bash ./gradlew "$TASK" "${GRADLE_ARGS[@]}" --stacktrace
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: android-${{ inputs.build_type }}-${{ github.run_number }}
           path: app/build/outputs/apk/${{ inputs.build_type }}/*.apk
+          archive: false
           if-no-files-found: error
           retention-days: 7
