@@ -3,10 +3,17 @@ package com.cfst.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,6 +69,19 @@ fun SpeedTestApp(application: android.app.Application) {
     val progress by viewModel.progress.collectAsState()
     val results by viewModel.results.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
+    val activity = LocalContext.current as? ComponentActivity
+
+    // 只在测速进行且当前界面可见时阻止息屏；完成、停止或 Activity 销毁时恢复正常。
+    DisposableEffect(activity, isTesting) {
+        if (isTesting) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (isTesting) {
+                activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
 
     var showSettings by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
@@ -759,6 +779,9 @@ fun EnhancedSettingsDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                BatteryOptimizationSetting()
+                Divider()
+
                 OutlinedTextField(
                     value = testCountText,
                     onValueChange = {
@@ -1063,6 +1086,66 @@ fun EnhancedSettingsDialog(
         HistoryDialog(
             viewModel = viewModel,
             onDismiss = { showHistoryDialog = false }
+        )
+    }
+}
+
+@Composable
+fun BatteryOptimizationSetting() {
+    val context = LocalContext.current
+    val powerManager = remember(context) {
+        context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    }
+    var isExempt by remember(context) {
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+    }
+    val settingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // 系统授权结果不依赖 resultCode，始终重新读取真实状态。
+        isExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("后台高耗电运行", fontWeight = FontWeight.Medium)
+        Text(
+            if (isExempt) "已允许忽略系统电池优化" else "尚未允许忽略系统电池优化",
+            fontSize = 13.sp,
+            color = if (isExempt) Color(0xFF388E3C) else Color.Gray
+        )
+        OutlinedButton(
+            onClick = {
+                val requestIntent = Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:${context.packageName}")
+                )
+                try {
+                    settingsLauncher.launch(requestIntent)
+                } catch (e: Exception) {
+                    // 部分 ROM 不支持直接授权页面，退回电池优化设置列表。
+                    try {
+                        settingsLauncher.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    } catch (fallbackError: Exception) {
+                        try {
+                            settingsLauncher.launch(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:${context.packageName}"))
+                            )
+                        } catch (detailsError: Exception) {
+                            Toast.makeText(context, "无法打开系统电池设置", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            enabled = !isExempt,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (isExempt) "已允许后台高耗电" else "允许后台高耗电")
+        }
+        Text(
+            "需在系统弹窗中手动授权。部分手机还需在系统应用电池设置中选择“不限制”；此权限不保证后台测速永不被系统中断。",
+            fontSize = 12.sp,
+            color = Color.Gray
         )
     }
 }
